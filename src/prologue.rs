@@ -1,7 +1,6 @@
+use crate::root_header::{RootHeader, RootHeaderEnum};
 use anyhow::Result;
 use tokio::io::AsyncReadExt;
-
-use crate::root_header::RootHeader;
 
 // https://theapplewiki.com/wiki/Apple_Encrypted_Archive#Prologue
 pub struct AeaPrologue {
@@ -16,7 +15,7 @@ pub struct AeaPrologue {
     pub encryption_data: Vec<u8>,
     pub salt: [u8; 32],
     pub root_hmac: [u8; 32],
-    pub encrypted_root_header: [u8; 48],
+    pub root_header: RootHeaderEnum,
     pub first_cluster_hmac: [u8; 32],
 }
 
@@ -92,12 +91,32 @@ impl AeaPrologue {
             encryption_data,
             salt,
             root_hmac,
-            encrypted_root_header: root_header,
+            root_header: RootHeaderEnum::Encrypted(root_header),
             first_cluster_hmac,
         })
     }
 
-    pub async fn decrypt_root_header(&self, amk: &[u8; 32]) -> Result<RootHeader> {
-        RootHeader::decrypt_root_header(self, amk).await
+    pub async fn get_decrypted_root_header(&mut self, amk: &[u8; 32]) -> Result<&RootHeader> {
+        let root_header = RootHeader::decrypt_root_header(self, amk).await?;
+        if let Some(root_header) = root_header {
+            self.root_header = RootHeaderEnum::Unencrypted(root_header);
+        }
+        match &self.root_header {
+            RootHeaderEnum::Unencrypted(header) => Ok(header),
+            RootHeaderEnum::Encrypted(_) => Err(anyhow::anyhow!("Failed to decrypt root header.")),
+        }
+    }
+
+    pub fn length(&self) -> usize {
+        4 + 3
+            + 1
+            + 4
+            + self.auth_data.len()
+            + self.prologue_signature.len()
+            + self.encryption_data.len()
+            + 32
+            + 32
+            + 48
+            + 32
     }
 }

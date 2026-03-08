@@ -2,6 +2,11 @@ use crate::{crypto::aes_aead_decrypt, prologue::AeaPrologue};
 use anyhow::Result;
 use sha2::Sha256;
 
+pub enum RootHeaderEnum {
+    Unencrypted(RootHeader),
+    Encrypted([u8; 48]),
+}
+
 pub struct RootHeader {
     pub raw_size: [u8; 8],
     pub container_size: [u8; 8],
@@ -14,7 +19,15 @@ pub struct RootHeader {
 
 impl RootHeader {
     // https://theapplewiki.com/wiki/Apple_Encrypted_Archive#Decrypting_root_header
-    pub async fn decrypt_root_header(prologue: &AeaPrologue, amk: &[u8; 32]) -> Result<RootHeader> {
+    pub async fn decrypt_root_header(
+        prologue: &AeaPrologue,
+        amk: &[u8; 32],
+    ) -> Result<Option<RootHeader>> {
+        let root_header_encrypted = match &prologue.root_header {
+            RootHeaderEnum::Encrypted(data) => data,
+            RootHeaderEnum::Unencrypted(_) => return Ok(None),
+        };
+
         // Derive 80-byte RHEK
         let hk_rhek = hkdf::Hkdf::<Sha256>::new(None, amk);
         let mut rhek = [0u8; 80];
@@ -27,15 +40,11 @@ impl RootHeader {
         ad.extend_from_slice(&prologue.first_cluster_hmac);
         ad.extend_from_slice(&prologue.auth_data);
 
-        let decrypted_header = aes_aead_decrypt(
-            &rhek,
-            &prologue.encrypted_root_header,
-            &ad,
-            &prologue.root_hmac,
-        )?;
+        let decrypted_header =
+            aes_aead_decrypt(&rhek, root_header_encrypted, &ad, &prologue.root_hmac)?;
 
         let root_header = RootHeader::from_decrypted_data(&decrypted_header);
-        Ok(root_header)
+        Ok(Some(root_header))
     }
 
     pub fn from_decrypted_data(data: &[u8]) -> Self {

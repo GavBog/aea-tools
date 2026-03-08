@@ -3,13 +3,14 @@ use anyhow::Result;
 use tokio::io::AsyncReadExt;
 
 // https://theapplewiki.com/wiki/Apple_Encrypted_Archive#Cluster_header
+#[derive(Clone)]
 pub struct ClusterHeader {
     // Encrypted: (checksum_length+8)*segments_per_cluster
     // Unencrypted: segment_size*segments_per_cluster
     pub segment_info: Vec<SegmentInfo>,
     pub next_cluster_hmac: [u8; 32],
     // 32*segments_per_cluster
-    pub segment_hmacs: Vec<u8>,
+    pub segment_hmacs: Vec<[u8; 32]>,
 }
 
 impl ClusterHeader {
@@ -39,10 +40,23 @@ impl ClusterHeader {
         )
         .await?;
 
+        let segment_hmacs = segment_hmacs
+            .chunks_exact(32)
+            .map(|chunk| {
+                let mut hmac = [0u8; 32];
+                hmac.copy_from_slice(chunk);
+                hmac
+            })
+            .collect::<Vec<_>>();
+
         Ok(Self {
             segment_info,
             next_cluster_hmac,
             segment_hmacs,
         })
+    }
+
+    pub fn encoded_len(&self) -> usize {
+        (32 + 8) * self.segment_info.len() + 32 + 32 * self.segment_info.len()
     }
 }

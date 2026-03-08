@@ -1,6 +1,6 @@
 use anyhow::Result;
 use apfs::ApfsVolume;
-use asahi_remote_firmware::AeaDecrypter;
+use asahi_remote_firmware::reader::AeaReader;
 use async_zip::tokio::read::seek::ZipFileReader;
 use base64::{Engine as _, engine::general_purpose};
 use remote_file::HttpFile;
@@ -60,10 +60,8 @@ async fn main() -> Result<()> {
         .seek(tokio::io::SeekFrom::Current(trailing_size as i64))
         .await?;
 
-    let mut aea_decrypter = AeaDecrypter::new(&ipsw_key, &mut buffered_reader).await?;
-    // aea_decrypter.get_all_cluster_headers().await?;
-    // let bytes_left = aea_decrypter.bytes_left().await?;
-    // println!("Bytes left in AEA stream: {}", bytes_left);
+    let mut aea_decrypter = AeaReader::new(&ipsw_key, &mut buffered_reader).await?;
+    let cluster_count = aea_decrypter.cluster_count().await?;
 
     let mut file = OpenOptions::new()
         .write(true)
@@ -72,30 +70,11 @@ async fn main() -> Result<()> {
         .open("output.dmg")
         .await?;
 
-    while !aea_decrypter.is_finished() {
-        let cluster_header = aea_decrypter.get_cluster_header().await?;
-        let segments = aea_decrypter.get_segments(&cluster_header).await?;
-
-        let decompressed_segments = aea_decrypter
-            .decompress_segments(segments, cluster_header.segment_info)
+    for cluster_index in 0..cluster_count {
+        let segments = aea_decrypter
+            .get_all_segments_from_cluster(cluster_index)
             .await?;
-
-        file.write_all(&decompressed_segments.concat()).await?;
-    }
-    file.flush().await?;
-
-    let file = std::fs::File::open("output.dmg")?;
-    let mut vol = ApfsVolume::open(std::io::BufReader::new(file))?;
-
-    let info = vol.volume_info();
-    println!(
-        "{}: {} files, {} dirs",
-        info.name, info.num_files, info.num_directories
-    );
-
-    // List root directory
-    for entry in vol.list_directory("/")? {
-        println!("{:?} {:>12} {}", entry.kind, entry.size, entry.name);
+        file.write_all(&segments.concat()).await?;
     }
 
     Ok(())

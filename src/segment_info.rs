@@ -1,6 +1,7 @@
 use crate::crypto::aes_aead_decrypt;
 use anyhow::Result;
 
+#[derive(Clone)]
 pub struct SegmentInfo {
     pub decompressed_size: u32,
     pub compressed_size: u32,
