@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use crate::{
     cluster_header::ClusterHeader,
     crypto::{
@@ -11,14 +9,16 @@ use crate::{
     root_header::RootHeader,
 };
 use anyhow::Result;
-use async_recursion::async_recursion;
 use lzfse_rust::LzfseRingDecoder;
 use sha2::{Digest, Sha256};
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use std::{
+    collections::BTreeMap,
+    io::{Read, Seek},
+};
 
 pub struct AeaReader<S>
 where
-    S: AsyncReadExt + AsyncSeekExt + Unpin,
+    S: Read + Seek + Unpin,
 {
     stream: S,
     // TODO: I dont really like the whole idea of start_pos... I think we have everything use
@@ -30,10 +30,10 @@ where
 
 impl<S> AeaReader<S>
 where
-    S: AsyncReadExt + AsyncSeekExt + Unpin,
+    S: Read + Seek + Unpin,
 {
-    pub async fn new(external_key: &[u8], mut stream: S) -> Result<Self> {
-        let start_pos = stream.stream_position().await?;
+    pub fn new(external_key: &[u8], mut stream: S) -> Result<Self> {
+        let start_pos = stream.stream_position()?;
 
         Ok(Self {
             stream,
@@ -43,14 +43,12 @@ where
         })
     }
 
-    async fn ensure_prologue_loaded(&mut self) -> Result<()> {
+    fn ensure_prologue_loaded(&mut self) -> Result<()> {
         if self.runtime_data.prologue.is_some() {
             return Ok(());
         }
-        self.stream
-            .seek(std::io::SeekFrom::Start(self.start_pos))
-            .await?;
-        let prologue = AeaPrologue::decode(&mut self.stream).await?;
+        self.stream.seek(std::io::SeekFrom::Start(self.start_pos))?;
+        let prologue = AeaPrologue::decode(&mut self.stream)?;
         self.dictionary.prologue_range = Some((self.start_pos, prologue.length() as u64));
         self.runtime_data.prologue = Some(prologue);
         Ok(())
@@ -70,17 +68,17 @@ where
             .ok_or_else(|| anyhow::anyhow!("Prologue not loaded"))
     }
 
-    pub async fn get_prologue(&mut self) -> Result<&AeaPrologue> {
-        self.ensure_prologue_loaded().await?;
+    pub fn get_prologue(&mut self) -> Result<&AeaPrologue> {
+        self.ensure_prologue_loaded()?;
         self.prologue()
     }
 
-    pub async fn get_main_key(&mut self) -> Result<[u8; 32]> {
+    pub fn get_main_key(&mut self) -> Result<[u8; 32]> {
         if let Some(amk) = self.runtime_data.amk {
             return Ok(amk);
         }
 
-        self.ensure_prologue_loaded().await?;
+        self.ensure_prologue_loaded()?;
         let prologue = self.prologue()?;
         let amk = derive_main_key(
             &prologue.salt,
@@ -92,17 +90,16 @@ where
         Ok(amk)
     }
 
-    pub async fn get_root_header(&mut self) -> Result<&RootHeader> {
-        let amk = self.get_main_key().await?;
-        self.ensure_prologue_loaded().await?;
+    pub fn get_root_header(&mut self) -> Result<&RootHeader> {
+        let amk = self.get_main_key()?;
+        self.ensure_prologue_loaded()?;
         let prologue = self.prologue_mut()?;
-        let root_header = prologue.get_decrypted_root_header(&amk).await?;
+        let root_header = prologue.get_decrypted_root_header(&amk)?;
 
         Ok(root_header)
     }
 
-    #[async_recursion(?Send)]
-    async fn ensure_cluster_header_loaded(&mut self, cluster_index: u32) -> Result<()> {
+    fn ensure_cluster_header_loaded(&mut self, cluster_index: u32) -> Result<()> {
         if self
             .runtime_data
             .cluster_headers
@@ -111,32 +108,32 @@ where
             return Ok(());
         }
 
-        let segments_per_cluster = self.get_root_header().await?.segments_per_cluster;
+        let segments_per_cluster = self.get_root_header()?.segments_per_cluster;
         if let Some((offset, _length, chek, hmac)) =
             self.dictionary.cluster_map.get(&cluster_index).cloned()
         {
-            self.stream.seek(std::io::SeekFrom::Start(offset)).await?;
+            self.stream.seek(std::io::SeekFrom::Start(offset))?;
             let cluster_header =
-                ClusterHeader::decode(&mut self.stream, &chek, &hmac, segments_per_cluster).await?;
+                ClusterHeader::decode(&mut self.stream, &chek, &hmac, segments_per_cluster)?;
             self.runtime_data
                 .cluster_headers
                 .insert(cluster_index, cluster_header);
             return Ok(());
         }
 
-        let amk = self.get_main_key().await?;
+        let amk = self.get_main_key()?;
         let ck = derive_cluster_key(&amk, cluster_index)?;
         let chek = derive_cluster_header_encryption_key(&ck);
 
         if cluster_index == 0 {
-            self.ensure_prologue_loaded().await?;
+            self.ensure_prologue_loaded()?;
             let prologue_range = self
                 .dictionary
                 .prologue_range
                 .ok_or_else(|| anyhow::anyhow!("Prologue range not found in dictionary"))?;
 
             let offset = prologue_range.0 + prologue_range.1;
-            self.stream.seek(std::io::SeekFrom::Start(offset)).await?;
+            self.stream.seek(std::io::SeekFrom::Start(offset))?;
 
             let first_cluster_hmac = self.prologue()?.first_cluster_hmac;
             let cluster_header = ClusterHeader::decode(
@@ -144,8 +141,7 @@ where
                 &chek,
                 &first_cluster_hmac,
                 segments_per_cluster,
-            )
-            .await?;
+            )?;
 
             self.dictionary.cluster_map.insert(
                 cluster_index,
@@ -163,8 +159,10 @@ where
             return Ok(());
         }
 
-        let previous_cluster_header = self.get_cluster_header(cluster_index - 1).await?;
+        let previous_cluster_header = self.get_cluster_header(cluster_index - 1)?;
         let hmac = previous_cluster_header.next_cluster_hmac;
+
+        println!("Loading cluster header for cluster {}", cluster_index);
 
         let segment_info = &previous_cluster_header.segment_info;
         let segment_offset = segment_info
@@ -179,10 +177,10 @@ where
             .ok_or_else(|| anyhow::anyhow!("Previous cluster header not found in dictionary"))?;
 
         let offset = header_offset + segment_offset;
-        self.stream.seek(std::io::SeekFrom::Start(offset)).await?;
+        self.stream.seek(std::io::SeekFrom::Start(offset))?;
 
         let cluster_header =
-            ClusterHeader::decode(&mut self.stream, &chek, &hmac, segments_per_cluster).await?;
+            ClusterHeader::decode(&mut self.stream, &chek, &hmac, segments_per_cluster)?;
         self.dictionary.cluster_map.insert(
             cluster_index,
             (offset, cluster_header.encoded_len() as u64, chek, hmac),
@@ -194,31 +192,31 @@ where
         Ok(())
     }
 
-    pub async fn get_cluster_header(&mut self, cluster_index: u32) -> Result<&ClusterHeader> {
-        self.ensure_cluster_header_loaded(cluster_index).await?;
+    pub fn get_cluster_header(&mut self, cluster_index: u32) -> Result<&ClusterHeader> {
+        self.ensure_cluster_header_loaded(cluster_index)?;
         self.runtime_data
             .cluster_headers
             .get(&cluster_index)
             .ok_or_else(|| anyhow::anyhow!("Cluster header not found"))
     }
 
-    pub async fn get_segment(&mut self, cluster_index: u32, segment_index: u32) -> Result<Vec<u8>> {
+    pub fn get_segment(&mut self, cluster_index: u32, segment_index: u32) -> Result<Vec<u8>> {
         if let Some((offset, length, key, hmac)) = self
             .dictionary
             .segment_map
             .get(&(cluster_index, segment_index))
             .cloned()
         {
-            self.stream.seek(std::io::SeekFrom::Start(offset)).await?;
+            self.stream.seek(std::io::SeekFrom::Start(offset))?;
             let mut encrypted_segment_data = vec![0u8; length as usize];
-            self.stream.read_exact(&mut encrypted_segment_data).await?;
+            self.stream.read_exact(&mut encrypted_segment_data)?;
 
             let segment_data = aes_aead_decrypt(&key, &encrypted_segment_data, &[], &hmac)?;
             return Ok(segment_data);
         }
 
         let (segment_offset, segment_info, segment_hmac) = {
-            let cluster_header = self.get_cluster_header(cluster_index).await?;
+            let cluster_header = self.get_cluster_header(cluster_index)?;
             let offset = cluster_header
                 .segment_info
                 .iter()
@@ -259,7 +257,7 @@ where
         };
 
         // TODO: cache cluster key in runtime_data?
-        let amk = self.get_main_key().await?;
+        let amk = self.get_main_key()?;
         let ck = derive_cluster_key(&amk, cluster_index)?;
         let sk = derive_segment_key(&ck, segment_index);
 
@@ -273,11 +271,9 @@ where
             ),
         );
 
-        self.stream
-            .seek(std::io::SeekFrom::Start(segment_offset))
-            .await?;
+        self.stream.seek(std::io::SeekFrom::Start(segment_offset))?;
         let mut encrypted_segment_data = vec![0u8; segment_info.compressed_size as usize];
-        self.stream.read_exact(&mut encrypted_segment_data).await?;
+        self.stream.read_exact(&mut encrypted_segment_data)?;
         let segment_data = aes_aead_decrypt(&sk, &encrypted_segment_data, &[], &segment_hmac)?;
 
         let mut decoder = LzfseRingDecoder::default();
@@ -314,8 +310,8 @@ where
         Ok(decompressed)
     }
 
-    pub async fn cluster_count(&mut self) -> Result<u32> {
-        let root_header = self.get_root_header().await?;
+    pub fn cluster_count(&mut self) -> Result<u32> {
+        let root_header = self.get_root_header()?;
         let container_size = u64::from_le_bytes(root_header.container_size);
         let segment_size = u32::from_le_bytes(root_header.segment_size) as u64;
         let segments_per_cluster = u32::from_le_bytes(root_header.segments_per_cluster) as u64;
@@ -325,17 +321,17 @@ where
         Ok(cluster_count)
     }
 
-    async fn ensure_all_cluster_headers_loaded(&mut self) -> Result<()> {
-        let cluster_count = self.cluster_count().await?;
+    fn ensure_all_cluster_headers_loaded(&mut self) -> Result<()> {
+        let cluster_count = self.cluster_count()?;
         for cluster_index in 0..cluster_count {
-            self.ensure_cluster_header_loaded(cluster_index).await?;
+            self.ensure_cluster_header_loaded(cluster_index)?;
         }
 
         Ok(())
     }
 
-    pub async fn get_all_cluster_headers(&mut self) -> Result<Vec<&ClusterHeader>> {
-        self.ensure_all_cluster_headers_loaded().await?;
+    pub fn get_all_cluster_headers(&mut self) -> Result<Vec<&ClusterHeader>> {
+        self.ensure_all_cluster_headers_loaded()?;
         let cluster_headers = self
             .runtime_data
             .cluster_headers
@@ -345,11 +341,8 @@ where
         Ok(cluster_headers)
     }
 
-    pub async fn get_all_segments_from_cluster(
-        &mut self,
-        cluster_index: u32,
-    ) -> Result<Vec<Vec<u8>>> {
-        let cluster_header = self.get_cluster_header(cluster_index).await?;
+    pub fn get_all_segments_from_cluster(&mut self, cluster_index: u32) -> Result<Vec<Vec<u8>>> {
+        let cluster_header = self.get_cluster_header(cluster_index)?;
         let segment_count = cluster_header.segment_info.len() as u32;
         let mut segments = Vec::with_capacity(segment_count as usize);
         for segment_index in 0..segment_count {
@@ -357,11 +350,15 @@ where
                 "Reading cluster {}, segment {}",
                 cluster_index, segment_index
             );
-            let segment = self.get_segment(cluster_index, segment_index).await?;
+            let segment = self.get_segment(cluster_index, segment_index)?;
             segments.push(segment);
         }
 
         Ok(segments)
+    }
+
+    pub fn get_data_at_range(&mut self, offset: u64, length: usize) -> Result<Vec<u8>> {
+        Ok(Vec::new())
     }
 }
 

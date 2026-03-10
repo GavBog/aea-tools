@@ -1,6 +1,6 @@
 use crate::segment_info::SegmentInfo;
 use anyhow::Result;
-use tokio::io::AsyncReadExt;
+use std::io::Read;
 
 // https://theapplewiki.com/wiki/Apple_Encrypted_Archive#Cluster_header
 #[derive(Clone)]
@@ -14,7 +14,7 @@ pub struct ClusterHeader {
 }
 
 impl ClusterHeader {
-    pub async fn decode<R: AsyncReadExt + Unpin>(
+    pub fn decode<R: Read + Unpin>(
         reader: &mut R,
         chek: &[u8; 80],
         expected_hmac: &[u8; 32],
@@ -27,9 +27,9 @@ impl ClusterHeader {
         let mut encrypted_segment_info = vec![0u8; encrypted_segment_info_size];
         let mut next_cluster_hmac = [0u8; 32];
         let mut segment_hmacs = vec![0u8; segment_hmacs_size];
-        reader.read_exact(&mut encrypted_segment_info).await?;
-        reader.read_exact(&mut next_cluster_hmac).await?;
-        reader.read_exact(&mut segment_hmacs).await?;
+        reader.read_exact(&mut encrypted_segment_info)?;
+        reader.read_exact(&mut next_cluster_hmac)?;
+        reader.read_exact(&mut segment_hmacs)?;
 
         let segment_info = SegmentInfo::decrypt_segment_info(
             &next_cluster_hmac,
@@ -37,8 +37,7 @@ impl ClusterHeader {
             encrypted_segment_info,
             chek,
             expected_hmac,
-        )
-        .await?;
+        )?;
 
         let segment_hmacs = segment_hmacs
             .chunks_exact(32)

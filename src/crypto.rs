@@ -26,8 +26,6 @@ fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
 
 pub fn verify_padding(key: &[u8], ciphertext: &[u8], expected_hmac: &[u8]) -> Result<Vec<u8>> {
     let calculated_hmac = hmac_sha256(key, ciphertext);
-    println!("Calculated padding HMAC: {:x?}", calculated_hmac);
-    println!("Expected padding HMAC: {:x?}", expected_hmac);
     if calculated_hmac != expected_hmac {
         anyhow::bail!("Integrity check failed: HMAC mismatch");
     }

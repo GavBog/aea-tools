@@ -19,7 +19,7 @@ pub struct RootHeader {
 
 impl RootHeader {
     // https://theapplewiki.com/wiki/Apple_Encrypted_Archive#Decrypting_root_header
-    pub async fn decrypt_root_header(
+    pub fn decrypt_root_header(
         prologue: &AeaPrologue,
         amk: &[u8; 32],
     ) -> Result<Option<RootHeader>> {

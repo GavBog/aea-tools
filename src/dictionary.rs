@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 type Offset = u64;
 type Length = u64;
@@ -14,7 +14,7 @@ pub struct AeaDictionary {
     pub root_header_hmac: Option<[u8; 32]>,
 
     pub prologue_range: Option<(Offset, Length)>,
-    pub cluster_map: BTreeMap<ClusterIndex, (Offset, Length, Key80, Hmac32)>,
-    pub segment_map: BTreeMap<(ClusterIndex, SegmentIndex), (Offset, Length, Key80, Hmac32)>,
+    pub cluster_map: HashMap<ClusterIndex, (Offset, Length, Key80, Hmac32)>,
+    pub segment_map: HashMap<(ClusterIndex, SegmentIndex), (Offset, Length, Key80, Hmac32)>,
     pub padding_start: Option<(Offset, Length, [u8; 32])>,
 }

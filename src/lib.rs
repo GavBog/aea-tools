@@ -5,3 +5,5 @@ pub mod prologue;
 pub mod reader;
 pub mod root_header;
 pub mod segment_info;
+pub mod stream;
+

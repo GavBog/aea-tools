@@ -9,7 +9,7 @@ pub struct SegmentInfo {
 }
 
 impl SegmentInfo {
-    pub async fn decrypt_segment_info(
+    pub fn decrypt_segment_info(
         next_cluster_hmac: &[u8; 32],
         segment_hmacs: &[u8],
         encrypted_segment_info: Vec<u8>,

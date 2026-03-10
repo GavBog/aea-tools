@@ -1,6 +1,6 @@
 use crate::root_header::{RootHeader, RootHeaderEnum};
 use anyhow::Result;
-use tokio::io::AsyncReadExt;
+use std::io::Read;
 
 // https://theapplewiki.com/wiki/Apple_Encrypted_Archive#Prologue
 pub struct AeaPrologue {
@@ -20,15 +20,15 @@ pub struct AeaPrologue {
 }
 
 impl AeaPrologue {
-    pub async fn decode<R: AsyncReadExt + Unpin>(reader: &mut R) -> Result<Self> {
+    pub fn decode<R: Read + Unpin>(reader: &mut R) -> Result<Self> {
         let mut magic = [0u8; 4];
         let mut profile_id_bytes = [0u8; 3];
         let mut hardness = [0u8; 1];
         let mut ad_len_bytes = [0u8; 4];
-        reader.read_exact(&mut magic).await?;
-        reader.read_exact(&mut profile_id_bytes).await?;
-        reader.read_exact(&mut hardness).await?;
-        reader.read_exact(&mut ad_len_bytes).await?;
+        reader.read_exact(&mut magic)?;
+        reader.read_exact(&mut profile_id_bytes)?;
+        reader.read_exact(&mut hardness)?;
+        reader.read_exact(&mut ad_len_bytes)?;
 
         if &magic != b"AEA1" {
             return Err(anyhow::anyhow!(
@@ -47,7 +47,7 @@ impl AeaPrologue {
 
         let ad_len = u32::from_le_bytes(ad_len_bytes);
         let mut auth_data = vec![0u8; ad_len as usize];
-        reader.read_exact(&mut auth_data).await?;
+        reader.read_exact(&mut auth_data)?;
 
         let sig_len = match profile_id {
             0 => 128,
@@ -57,7 +57,7 @@ impl AeaPrologue {
 
         let mut prologue_signature = vec![0u8; sig_len];
         if sig_len > 0 {
-            reader.read_exact(&mut prologue_signature).await?;
+            reader.read_exact(&mut prologue_signature)?;
         }
 
         let enc_data_len = match profile_id {
@@ -68,7 +68,7 @@ impl AeaPrologue {
 
         let mut encryption_data = vec![0u8; enc_data_len];
         if enc_data_len > 0 {
-            reader.read_exact(&mut encryption_data).await?;
+            reader.read_exact(&mut encryption_data)?;
         }
 
         let mut salt = [0u8; 32];
@@ -76,10 +76,10 @@ impl AeaPrologue {
         let mut root_header = [0u8; 48];
         let mut first_cluster_hmac = [0u8; 32];
 
-        reader.read_exact(&mut salt).await?;
-        reader.read_exact(&mut root_hmac).await?;
-        reader.read_exact(&mut root_header).await?;
-        reader.read_exact(&mut first_cluster_hmac).await?;
+        reader.read_exact(&mut salt)?;
+        reader.read_exact(&mut root_hmac)?;
+        reader.read_exact(&mut root_header)?;
+        reader.read_exact(&mut first_cluster_hmac)?;
 
         Ok(Self {
             magic,
@@ -96,8 +96,8 @@ impl AeaPrologue {
         })
     }
 
-    pub async fn get_decrypted_root_header(&mut self, amk: &[u8; 32]) -> Result<&RootHeader> {
-        let root_header = RootHeader::decrypt_root_header(self, amk).await?;
+    pub fn get_decrypted_root_header(&mut self, amk: &[u8; 32]) -> Result<&RootHeader> {
+        let root_header = RootHeader::decrypt_root_header(self, amk)?;
         if let Some(root_header) = root_header {
             self.root_header = RootHeaderEnum::Unencrypted(root_header);
         }
