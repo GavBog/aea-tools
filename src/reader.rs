@@ -21,8 +21,6 @@ where
     S: Read + Seek + Unpin,
 {
     stream: S,
-    // TODO: I dont really like the whole idea of start_pos... I think we have everything use
-    // relative positions relative to the start of the aea contianer
     start_pos: u64,
     dictionary: AeaDictionary,
     runtime_data: RuntimeData,
@@ -123,6 +121,7 @@ where
 
         let amk = self.get_main_key()?;
         let ck = derive_cluster_key(&amk, cluster_index)?;
+        self.runtime_data.ck.insert(cluster_index, ck);
         let chek = derive_cluster_header_encryption_key(&ck);
 
         if cluster_index == 0 {
@@ -201,6 +200,10 @@ where
     }
 
     pub fn get_segment(&mut self, cluster_index: u32, segment_index: u32) -> Result<Vec<u8>> {
+        println!(
+            "Getting segment data for cluster {}, segment {}",
+            cluster_index, segment_index
+        );
         if let Some((offset, length, key, hmac)) = self
             .dictionary
             .segment_map
@@ -210,9 +213,18 @@ where
             self.stream.seek(std::io::SeekFrom::Start(offset))?;
             let mut encrypted_segment_data = vec![0u8; length as usize];
             self.stream.read_exact(&mut encrypted_segment_data)?;
-
             let segment_data = aes_aead_decrypt(&key, &encrypted_segment_data, &[], &hmac)?;
-            return Ok(segment_data);
+
+            let mut decoder = LzfseRingDecoder::default();
+            let decompressed = if segment_data.starts_with(b"bvx2") {
+                let mut out = Vec::new();
+                decoder.decode_bytes(&segment_data, &mut out)?;
+                out
+            } else {
+                segment_data
+            };
+
+            return Ok(decompressed);
         }
 
         let (segment_offset, segment_info, segment_hmac) = {
@@ -256,10 +268,10 @@ where
             (segment_offset, segment_info, segment_hmac)
         };
 
-        // TODO: cache cluster key in runtime_data?
-        let amk = self.get_main_key()?;
-        let ck = derive_cluster_key(&amk, cluster_index)?;
-        let sk = derive_segment_key(&ck, segment_index);
+        let ck = self.runtime_data.ck.get(&cluster_index).ok_or_else(|| {
+            anyhow::anyhow!("Cluster key not found for cluster {}", cluster_index)
+        })?;
+        let sk = derive_segment_key(ck, segment_index);
 
         self.dictionary.segment_map.insert(
             (cluster_index, segment_index),
@@ -346,10 +358,6 @@ where
         let segment_count = cluster_header.segment_info.len() as u32;
         let mut segments = Vec::with_capacity(segment_count as usize);
         for segment_index in 0..segment_count {
-            println!(
-                "Reading cluster {}, segment {}",
-                cluster_index, segment_index
-            );
             let segment = self.get_segment(cluster_index, segment_index)?;
             segments.push(segment);
         }
@@ -357,8 +365,10 @@ where
         Ok(segments)
     }
 
-    pub fn get_data_at_range(&mut self, offset: u64, length: usize) -> Result<Vec<u8>> {
-        Ok(Vec::new())
+    pub fn get_decompressed_length(&mut self) -> Result<u64> {
+        let raw_size = self.get_root_header()?.raw_size;
+        let total_length = u64::from_le_bytes(raw_size);
+        Ok(total_length)
     }
 }
 
@@ -366,6 +376,7 @@ struct RuntimeData {
     pub external_key: Vec<u8>,
     pub prologue: Option<AeaPrologue>,
     pub amk: Option<[u8; 32]>,
+    pub ck: BTreeMap<u32, [u8; 32]>,
     pub cluster_headers: BTreeMap<u32, ClusterHeader>,
 }
 
@@ -375,6 +386,7 @@ impl RuntimeData {
             external_key: external_key.to_vec(),
             prologue: None,
             amk: None,
+            ck: BTreeMap::new(),
             cluster_headers: BTreeMap::new(),
         }
     }

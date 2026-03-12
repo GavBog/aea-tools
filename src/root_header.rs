@@ -28,14 +28,12 @@ impl RootHeader {
             RootHeaderEnum::Unencrypted(_) => return Ok(None),
         };
 
-        // Derive 80-byte RHEK
         let hk_rhek = hkdf::Hkdf::<Sha256>::new(None, amk);
         let mut rhek = [0u8; 80];
         hk_rhek
             .expand(b"AEA_RHEK", &mut rhek)
             .map_err(|_| anyhow::anyhow!("RHEK expand fail"))?;
 
-        // Decrypt using AEAD logic
         let mut ad = Vec::new();
         ad.extend_from_slice(&prologue.first_cluster_hmac);
         ad.extend_from_slice(&prologue.auth_data);

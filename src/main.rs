@@ -2,10 +2,9 @@ use std::io::{Seek, SeekFrom};
 
 use anyhow::Result;
 use apfs::ApfsVolume;
-use asahi_remote_firmware::reader::AeaReader;
+use asahi_remote_firmware::{reader::AeaReader, stream::AeaStream};
 use base64::{Engine as _, engine::general_purpose};
 use http_range_client::UreqHttpReader;
-use tokio::{fs::OpenOptions, io::AsyncWriteExt};
 use zip::ZipArchive;
 
 pub const LFH_SIGNATURE: u32 = 67324752;
@@ -32,20 +31,31 @@ async fn main() -> Result<()> {
     let mut reader = zip_reader.into_inner();
     reader.seek(SeekFrom::Start(offset))?;
 
-    let mut aea_decrypter = AeaReader::new(&ipsw_key, &mut reader)?;
-    let cluster_count = aea_decrypter.cluster_count()?;
+    let aea_decrypter = AeaReader::new(&ipsw_key, &mut reader)?;
+    let aea_stream = AeaStream::new(aea_decrypter)?;
 
-    let mut file = OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .create(true)
-        .open("output.dmg")
-        .await?;
+    let mut vol = ApfsVolume::open(aea_stream)?;
+    let info = vol.volume_info();
+    println!(
+        "{}: {} files, {} dirs",
+        info.name, info.num_files, info.num_directories
+    );
 
-    for cluster_index in 0..cluster_count {
-        let segments = aea_decrypter.get_all_segments_from_cluster(cluster_index)?;
-        file.write_all(&segments.concat()).await?;
+    let directories = vol.list_directory("/")?;
+    println!("Root directory entries:");
+    for entry in directories {
+        println!(" - {}", entry.name);
     }
+
+    let path = "usr/share/firmware/wifi/C-4378__s-B3/kyushu.trx";
+    let stat = vol.stat(path)?;
+    println!("{}: size {} bytes", path, stat.size);
+
+    // let mut file = File::create("output.dmg")?;
+    // for i in 0..aea_decrypter.cluster_count()? {
+    //     let segment_data = aea_decrypter.get_all_segments_from_cluster(i)?.concat();
+    //     file.write_all(&segment_data)?;
+    // }
 
     Ok(())
 }
