@@ -1,10 +1,13 @@
-use std::io::{Seek, SeekFrom};
-
 use anyhow::Result;
-use apfs::ApfsVolume;
 use asahi_remote_firmware::{reader::AeaReader, stream::AeaStream};
 use base64::{Engine as _, engine::general_purpose};
+use exhume_apfs::APFS;
 use http_range_client::UreqHttpReader;
+use std::{
+    fs::File,
+    io::{Seek, SeekFrom, Write},
+    path::PathBuf,
+};
 use zip::ZipArchive;
 
 pub const LFH_SIGNATURE: u32 = 67324752;
@@ -34,22 +37,58 @@ async fn main() -> Result<()> {
     let aea_decrypter = AeaReader::new(&ipsw_key, &mut reader)?;
     let aea_stream = AeaStream::new(aea_decrypter)?;
 
-    let mut vol = ApfsVolume::open(aea_stream)?;
-    let info = vol.volume_info();
-    println!(
-        "{}: {} files, {} dirs",
-        info.name, info.num_files, info.num_directories
-    );
+    let mut apfs = APFS::new(aea_stream).unwrap();
 
-    let directories = vol.list_directory("/")?;
-    println!("Root directory entries:");
-    for entry in directories {
-        println!(" - {}", entry.name);
-    }
+    if let Some(vol) = apfs.volumes.first().cloned() {
+        let fstree = apfs.open_fstree_for_volume(&vol).unwrap();
 
-    let path = "usr/share/firmware/wifi/C-4378__s-B3/kyushu.trx";
-    let stat = vol.stat(path)?;
-    println!("{}: size {} bytes", path, stat.size);
+        let mut stack = vec![
+            (
+                "usr/share/firmware/wifi".to_string(),
+                PathBuf::from("extracted_wifi"),
+            ),
+            (
+                "usr/share/firmware/bluetooth".to_string(),
+                PathBuf::from("extracted_bluetooth"),
+            ),
+        ];
+
+        while let Some((remote_path, local_path)) = stack.pop() {
+            let dir_node = match fstree.resolve_path(&mut apfs, &remote_path) {
+                Ok(node) => node,
+                Err(_) => continue,
+            };
+
+            if let Ok(children) = fstree.dir_children(&mut apfs, dir_node.inode_id) {
+                let _ = std::fs::create_dir_all(&local_path);
+
+                for child in children {
+                    let child_remote_path = format!("{}/{}", remote_path, child.name);
+                    let child_local_path = local_path.join(&child.name);
+
+                    match child.flags {
+                        // Directory
+                        4 => {
+                            println!("Found dir: {}", child_remote_path);
+                            stack.push((child_remote_path, child_local_path));
+                        }
+                        // File
+                        8 => {
+                            if let Ok(data) =
+                                fstree.read_file_by_path(&mut apfs, &child_remote_path)
+                            {
+                                println!("Extracting {} ({} bytes)", child_remote_path, data.len());
+                                if let Ok(mut f) = File::create(&child_local_path) {
+                                    let _ = f.write_all(&data);
+                                }
+                            }
+                        }
+                        _ => {} // Ignore symlinks (10) and other types for now
+                    }
+                }
+            }
+        }
+    };
 
     // let mut file = File::create("output.dmg")?;
     // for i in 0..aea_decrypter.cluster_count()? {

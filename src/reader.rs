@@ -12,7 +12,7 @@ use anyhow::Result;
 use lzfse_rust::LzfseRingDecoder;
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeMap,
+    collections::HashMap,
     io::{Read, Seek},
 };
 
@@ -215,7 +215,7 @@ where
             self.stream.read_exact(&mut encrypted_segment_data)?;
             let segment_data = aes_aead_decrypt(&key, &encrypted_segment_data, &[], &hmac)?;
 
-            let mut decoder = LzfseRingDecoder::default();
+            let decoder = &mut self.runtime_data.lzfse_decoder;
             let decompressed = if segment_data.starts_with(b"bvx2") {
                 let mut out = Vec::new();
                 decoder.decode_bytes(&segment_data, &mut out)?;
@@ -376,8 +376,9 @@ struct RuntimeData {
     pub external_key: Vec<u8>,
     pub prologue: Option<AeaPrologue>,
     pub amk: Option<[u8; 32]>,
-    pub ck: BTreeMap<u32, [u8; 32]>,
-    pub cluster_headers: BTreeMap<u32, ClusterHeader>,
+    pub ck: HashMap<u32, [u8; 32]>,
+    pub cluster_headers: HashMap<u32, ClusterHeader>,
+    pub lzfse_decoder: LzfseRingDecoder,
 }
 
 impl RuntimeData {
@@ -386,8 +387,9 @@ impl RuntimeData {
             external_key: external_key.to_vec(),
             prologue: None,
             amk: None,
-            ck: BTreeMap::new(),
-            cluster_headers: BTreeMap::new(),
+            ck: HashMap::new(),
+            cluster_headers: HashMap::new(),
+            lzfse_decoder: LzfseRingDecoder::default(),
         }
     }
 }
