@@ -161,8 +161,6 @@ where
         let previous_cluster_header = self.get_cluster_header(cluster_index - 1)?;
         let hmac = previous_cluster_header.next_cluster_hmac;
 
-        println!("Loading cluster header for cluster {}", cluster_index);
-
         let segment_info = &previous_cluster_header.segment_info;
         let segment_offset = segment_info
             .iter()
@@ -200,10 +198,6 @@ where
     }
 
     pub fn get_segment(&mut self, cluster_index: u32, segment_index: u32) -> Result<Vec<u8>> {
-        println!(
-            "Getting segment data for cluster {}, segment {}",
-            cluster_index, segment_index
-        );
         if let Some((offset, length, key, hmac)) = self
             .dictionary
             .segment_map
