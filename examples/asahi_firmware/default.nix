@@ -16,7 +16,7 @@ pkgs.stdenv.mkDerivation {
 
   outputHashMode = "recursive";
   outputHashAlgo = "sha256";
-  outputHash = "sha256-3s0K9eUb4OqzWYIii1DV6DMhrhFQp68902bQCbvQ85c=";
+  outputHash = "sha256-VymyzKl+X80UBawd6NiFSWQXV8Q09MwOVrDpEG9RGx0=";
 
   nativeBuildInputs = [
     extractor
