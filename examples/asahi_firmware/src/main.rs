@@ -112,6 +112,19 @@ fn main() -> Result<()> {
                                 println!("Extracted {}", child_archive);
                             }
                         }
+                        10 => {
+                            // Symlink
+                            let inode_id = child.inode_id.unwrap();
+                            let target =
+                                fstree.symlink_target(&mut apfs, inode_id).unwrap().unwrap();
+
+                            let mut link_header = Header::new_gnu();
+                            link_header.set_entry_type(tar::EntryType::Symlink);
+                            link_header.set_size(0);
+
+                            archive.append_link(&mut link_header, &child_archive, &target)?;
+                            println!("Symlink: {} -> {}", child_archive, target);
+                        }
                         _ => {}
                     }
                 }

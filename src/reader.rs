@@ -282,7 +282,7 @@ where
         self.stream.read_exact(&mut encrypted_segment_data)?;
         let segment_data = aes_aead_decrypt(&sk, &encrypted_segment_data, &[], &segment_hmac)?;
 
-        let mut decoder = LzfseRingDecoder::default();
+        let decoder = &mut self.runtime_data.lzfse_decoder;
         let decompressed = if segment_data.starts_with(b"bvx2") {
             let mut out = Vec::new();
             decoder.decode_bytes(&segment_data, &mut out)?;

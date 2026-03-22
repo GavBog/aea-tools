@@ -467,9 +467,8 @@ dependencies = [
 
 [[package]]
 name = "exhume_apfs"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30ce71c3eec58651a6f9e84de5a40c0f60f2fda3aa33cb6248c3d271a07c5c3d"
+version = "0.1.1"
+source = "git+https://github.com/GavBog/exhume_apfs.git#0be8d39b7076ed38f53dd670b3960396244fdd49"
 dependencies = [
  "byteorder",
  "chrono",
@@ -485,9 +484,9 @@ dependencies = [
 
 [[package]]
 name = "exhume_body"
-version = "0.5.3"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "436ed9f75f0f40528720f6071478ffa7d6ca2fdd116f1056fec8defbd4a18a16"
+checksum = "23ab77091722c6b3d89ec30ee511b97c3c96d1a589d1c4e9fb45d0941764f365"
 dependencies = [
  "clap",
  "clap-num",

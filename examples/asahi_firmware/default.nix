@@ -8,7 +8,12 @@ let
     version = "0.1.0";
     src = ../../.;
     buildAndTestSubdir = "examples/asahi_firmware";
-    cargoLock.lockFile = ../../Cargo.lock;
+    cargoLock = {
+      lockFile = ../../Cargo.lock;
+      outputHashes = {
+        "exhume_apfs-0.1.1" = "sha256-T5Xut8iHvyxesl7Mbqy9lEms+O9iOX5tT3CPj/2L8G4=";
+      };
+    };
   };
 in
 pkgs.stdenv.mkDerivation {
@@ -16,7 +21,7 @@ pkgs.stdenv.mkDerivation {
 
   outputHashMode = "recursive";
   outputHashAlgo = "sha256";
-  outputHash = "sha256-VymyzKl+X80UBawd6NiFSWQXV8Q09MwOVrDpEG9RGx0=";
+  outputHash = "sha256-agR/84QvYf49Gj9RzNHOcQFsE0cDfjBKo7uS9kRp6eE=";
 
   nativeBuildInputs = [
     extractor
