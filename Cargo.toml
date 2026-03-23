@@ -1,5 +1,5 @@
 [package]
-name = "aea_tools"
+name = "aea-tools"
 description = "Utility for Apple Encrypted Archives in Rust"
 repository = "https://github.com/GavBog/aea-tools"
 version = "0.1.0"

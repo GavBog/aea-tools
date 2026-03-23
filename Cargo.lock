@@ -9,7 +9,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
-name = "aea_tools"
+name = "aea-tools"
 version = "0.1.0"
 dependencies = [
  "aes",
@@ -134,7 +134,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 name = "asahi_firmware"
 version = "0.1.0"
 dependencies = [
- "aea_tools",
+ "aea-tools",
  "anyhow",
  "base64",
  "exhume_apfs",

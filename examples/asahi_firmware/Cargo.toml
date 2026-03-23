@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-aea_tools = { path = "../.." }
+aea-tools = { path = "../.." }
 anyhow = "1.0.102"
 base64 = "0.22.1"
 exhume_apfs = { git = "https://github.com/GavBog/exhume_apfs.git" }
