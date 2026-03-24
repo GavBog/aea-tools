@@ -1,8 +1,9 @@
 use crate::reader::AeaReader;
 use anyhow::Result;
+use lru::LruCache;
 use std::{
-    collections::HashMap,
     io::{Read, Seek, SeekFrom},
+    num::NonZeroUsize,
     sync::Arc,
 };
 
@@ -13,7 +14,7 @@ where
     reader: AeaReader<S>,
     virtual_position: u64,
     end_position: u64,
-    segment_cache: HashMap<(u32, u32), Arc<[u8]>>,
+    segment_cache: LruCache<(u32, u32), Arc<[u8]>>,
 
     segment_index_map: Vec<(u32, u32, u64)>,
     current_scanned_offset: u64,
@@ -25,18 +26,19 @@ impl<S> AeaStream<S>
 where
     S: Read + Seek + Unpin,
 {
-    pub fn new(mut reader: AeaReader<S>) -> std::io::Result<Self> {
+    pub fn new(mut reader: AeaReader<S>) -> Result<Self> {
         let end_position = reader
             .get_decompressed_length()
             .map_err(std::io::Error::other)?;
 
-        let total_cluster_count = reader.cluster_count().map_err(std::io::Error::other)?;
+        let total_cluster_count = reader.cluster_count()?;
+        let cache_cap = NonZeroUsize::new(128).unwrap();
 
         Ok(Self {
             reader,
             virtual_position: 0,
             end_position,
-            segment_cache: HashMap::new(),
+            segment_cache: LruCache::new(cache_cap),
             segment_index_map: Vec::new(),
             current_scanned_offset: 0,
             next_unscanned_cluster_index: 0,
@@ -96,7 +98,7 @@ where
                     let data: Vec<u8> = self.reader.get_segment(cluster_index, segment_index)?;
                     let shared_data: Arc<[u8]> = Arc::from(data);
                     self.segment_cache
-                        .insert((cluster_index, segment_index), Arc::clone(&shared_data));
+                        .put((cluster_index, segment_index), Arc::clone(&shared_data));
                     shared_data
                 };
 
