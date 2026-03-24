@@ -34,4 +34,4 @@ cargo run -p asahi_firmware --release <output_directory>
 
 ## Acknowledgements
 - [The Apple Wiki](https://theapplewiki.com/) - Provided information about AEA files that made this project possible.
-- [firmware-abomination](https://github.com/JJJollyjim/firmware-abomination) - Inspired this crate and planted the idea of extracting firmware files from IPSW files in my head. Unfortunately the method described in that repository no longer works as of macOS 26+ (Because of Apple Encrypted Archives).
+- [firmware-abomination](https://github.com/JJJollyjim/firmware-abomination) - Inspired this crate and planted the idea of extracting firmware files from IPSW files in my head. Unfortunately the method described in that repository no longer works as of macOS 15+ (Because of Apple Encrypted Archives).
