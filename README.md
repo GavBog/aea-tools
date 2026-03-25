@@ -13,6 +13,8 @@ Using this pipeline you can extract that 3MB file while using only 7-8MBs of ban
 ## Asahi Firmware Extractor
 This repo includes [asahi_firmware](./examples/asahi_firmware), a tool built on top of aea-tools to extract firmware for Apple Silicon devices running Linux.
 
+To use this with NixOS you can add the following to your flake inputs
+
 ```nix
 aea-tools = {
   url = "github:GavBog/aea-tools";
