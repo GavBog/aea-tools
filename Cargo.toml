@@ -2,7 +2,7 @@
 name = "aea-tools"
 description = "Utility for Apple Encrypted Archives in Rust"
 repository = "https://github.com/GavBog/aea-tools"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Gavin Bogie <me@gbogie.com> (https://www.gbogie.com/)"]
 license = "MIT OR Apache-2.0"
 edition = "2024"
